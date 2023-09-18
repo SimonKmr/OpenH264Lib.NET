@@ -42,13 +42,13 @@ namespace OpenH264Sample
 
         public System.IO.Stream BaseStream { get; private set; }
 
-        /// <summary>書き込み用に開く。</summary>
+        /// <summary>Open for writing</summary>
         public RiffFile(System.IO.Stream output, string fourCC) : base(output, "RIFF", fourCC)
         {
             BaseStream = output;
         }
 
-        /// <summary>読み取り用に開く。</summary>
+        /// <summary>Open for reading</summary>
         public RiffFile(System.IO.Stream input) : base(input)
         {
             BaseStream = input;

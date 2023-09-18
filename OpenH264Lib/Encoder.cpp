@@ -34,7 +34,7 @@ namespace OpenH264Lib {
 		return rc;
 	}
 
-	// C#‚©‚çbyte[]‚Æ‚µ‚ÄŒÄ‚Ño‚µ‰Â”\
+	// C#‚©‚çbyte[]‚Æ‚µ‚ÄŒÄ‚Ño‚µ‰Â”
 	int Encoder::Encode(array<Byte> ^i420)
 	{
 		// http://xptn.dtiblog.com/blog-entry-21.html
