@@ -20,14 +20,15 @@ namespace OpenH264Sample
 
         private void btnDecode_Click(object sender, EventArgs e)
         {
-            var dialog = new OpenFileDialog() { Filter = "avi|*.avi" };
+            var dialog = new OpenFileDialog() { Filter = "avi|*.avi|h264|*.h264" };
             if (dialog.ShowDialog() == DialogResult.OK)
             {
-                H264Decode(dialog.FileName,1920,1080);
+                if (dialog.FileName.EndsWith(".avi"))
+                    H264DecodeAvi(dialog.FileName, 1920, 1080);
             }
         }
 
-        private unsafe void H264Decode(string path,int width, int height)
+        private unsafe void H264DecodeAvi(string path,int width, int height)
         {
             // create decoder
             var decoder = new OpenH264Lib.Decoder(DllName);
