@@ -15,16 +15,16 @@ namespace OpenH264Lib {
 
 	///<summary>Decode h264 frame data to Bitmap.</summary>
 	///<returns>Bitmap. Might be null if frame data is incomplete.</returns>
-	byte* Decoder::Decode(array<Byte> ^frame, int length)
+	Bitmap^ Decoder::Decode(array<Byte> ^frame, int length)
 	{
 		// http://xptn.dtiblog.com/blog-entry-21.html
 		pin_ptr<Byte> ptr = &frame[0];
-		byte* rc = Decode(ptr, length);
+		Bitmap^ rc = Decode(ptr, length);
 		ptr = nullptr; // unpin
 		return rc;
 	}
 
-	byte* Decoder::Decode(unsigned char *frame, int length)
+	Bitmap^ Decoder::Decode(unsigned char *frame, int length)
 	{
 		unsigned char* buffer[3]; // obsoleted openh264 version 2.1.0 and later.
 
@@ -55,7 +55,10 @@ namespace OpenH264Lib {
 		int height = y_h;
 		int stride = y_s;
 
-		byte* result = MergeYUV420Planes(y_plane, u_plane, v_plane, width, height, stride);
+		byte* rgb = YUV420PtoRGB(y_plane, u_plane, v_plane, width, height, stride);
+		Bitmap^ result = RGBtoBitmap(rgb, width, height);
+		delete rgb;
+
 		return result;
 	}
 
@@ -72,7 +75,8 @@ namespace OpenH264Lib {
 		return 0;
 	};
 
-	// dllName:"openh264-1.7.0-win32.dll"
+	// コンストラクタ
+	// dllName:"openh264-1.7.0-win32.dll"のような文字列を指定する。
 	Decoder::Decoder(String ^dllName)
 	{
 		// Load DLL
@@ -95,37 +99,121 @@ namespace OpenH264Lib {
 		if (rc != 0) throw gcnew System::InvalidOperationException("Error occurred during initializing decoder.");
 	}
 
+	// デストラクタ：リソースを積極的に解放する為にあるメソッド。C#のDisposeに対応。
+	// マネージド、アンマネージド両方とも解放する。
 	Decoder::~Decoder()
 	{
+		// マネージド解放→なし
+		// ファイナライザ呼び出し
 		this->!Decoder();
 	}
 
+	// ファイナライザ：リソースの解放し忘れによる被害を最小限に抑える為にあるメソッド。
+	// アンマネージドリソースを解放する。
 	Decoder::!Decoder()
 	{
+		// アンマネージド解放
 		decoder->Uninitialize();
 		DestroyDecoderFunc(decoder);
 	}
 
-	byte* Decoder::MergeYUV420Planes(byte* yplane, byte* uplane, byte* vplane, int width, int height, int stride) {
-		int ySize = width * height;
-		int uSize = width * height / 4;
-		int vSize = width * height / 4;
+	byte* Decoder::YUV420PtoRGB(byte* yplane, byte* uplane, byte* vplane, int width, int height, int stride)
+	{
+		// https://www.ite.or.jp/contents/keywords/FILE-20120103130828.pdf
+		// Yは輝度、Uは赤、Vは青との色差。
+		// 人間の視覚は例えば暗闇では形状は認識できても色は認識しにくいように、輝度に比べ色に対する感度が低い
+		// RGBをYUVに変換すると、それを利用して画像を効率的に圧縮することができる。
+		// Yはそのままにし、UVを水平方向に半分にしたものを4:2:2、水平&垂直に半分にしたものを4:2:0フォーマットという。
 
-		int totalSize = ySize + uSize + vSize;
-		byte* result = new byte[totalSize];
+		// https://msdn.microsoft.com/ja-jp/library/windows/desktop/dd206750(v=vs.85).aspx
+		// [4:2:0 Formats, 16 Bits per Pixel]
+		// +-----------------+
+		// |                 |  YUV formats are planar formats. 
+		// |     Y Plane     |  The chroma channels are subsampled by a factor of two in both the horizontal and vertical dimensions.
+		// |                 |  Y samples appear first in memory.
+		// +--------+--------+  The V and U planes have the same stride as the Y plane.
+		// |  V Pln |        |  The U and V planes must start on memory boundaries that are a multiple of 16 lines.
+		// +--------+ unused |
+		// +--------+        |
+		// |  U Pln |        |
+		// +--------+--------+
 
-		for (int i = 0; i < ySize; i++) {
-			result[i] = yplane[i];
-		}
+		// Reference
+		// https://stackoverflow.com/questions/16107165/convert-from-yuv-420-to-imagebgr-byte/16108293
+		// https://gist.github.com/RicardoRodriguezPina/b90c4cef9c1646c0a9fe7faea8e06d63
 
-		for (int i = 0; i < uSize; i++) {
-			result[i + ySize] = uplane[i];
-		}
+		byte* result = new byte[width * height * 3];
+		byte* rgb = result;
 
-		for (int i = 0; i < vSize; i++) {
-			result[i + ySize + uSize] = vplane[i];
+		for (int y = 0; y < height; y++)
+		{
+			// 行の先頭へのポインタ
+			int rowIdx = (stride * y);
+			int uvpIdx = (stride / 2) * (y / 2);
+
+			byte* pYp = yplane + rowIdx;
+			byte* pUp = uplane + uvpIdx;
+			byte* pVp = vplane + uvpIdx;
+
+			// 2Pixelずつ処理する。
+			for (int x = 0; x < width; x += 2)
+			{
+				int C1 = pYp[0] - 16; // Yの下限は16
+				int C2 = pYp[1] - 16; // Yの下限は16
+				int D = *pUp - 128;   // 128で無色差
+				int E = *pVp - 128;   // 128で無色差
+
+				int R1 = (298 * C1 + 409 * E + 128) >> 8;
+				int G1 = (298 * C1 - 100 * D - 208 * E + 128) >> 8;
+				int B1 = (298 * C1 + 516 * D + 128) >> 8;
+
+				int R2 = (298 * C2 + 409 * E + 128) >> 8;
+				int G2 = (298 * C2 - 100 * D - 208 * E + 128) >> 8;
+				int B2 = (298 * C2 + 516 * D + 128) >> 8;
+
+				rgb[0] = (byte)(B1 < 0 ? 0 : B1 > 255 ? 255 : B1);
+				rgb[1] = (byte)(G1 < 0 ? 0 : G1 > 255 ? 255 : G1);
+				rgb[2] = (byte)(R1 < 0 ? 0 : R1 > 255 ? 255 : R1);
+				
+				rgb[3] = (byte)(B2 < 0 ? 0 : B2 > 255 ? 255 : B2);
+				rgb[4] = (byte)(G2 < 0 ? 0 : G2 > 255 ? 255 : G2);
+				rgb[5] = (byte)(R2 < 0 ? 0 : R2 > 255 ? 255 : R2);
+				
+				rgb += 6;
+				pYp += 2;
+				pUp += 1;
+				pVp += 1;
+			}
 		}
 
 		return result;
+	}
+
+	Bitmap^ Decoder::RGBtoBitmap(byte* rgb, int width, int height)
+	{
+		const int pixelSize = 3;
+		Bitmap^ bmp = gcnew Bitmap(width, height, System::Drawing::Imaging::PixelFormat::Format24bppRgb);
+		BitmapData^ bmpDate = bmp->LockBits(System::Drawing::Rectangle(0, 0, width, height), ImageLockMode::WriteOnly, bmp->PixelFormat);
+		byte *ptr = (byte *)bmpDate->Scan0.ToPointer();
+
+		int cnt = 0;
+		for (int y = 0; y < height; y++)
+		{
+			for (int x = 0; x < width; x++)
+			{
+				//ピクセルデータでのピクセル(x,y)の開始位置を計算する
+				int pos = y * bmpDate->Stride + x * pixelSize;
+
+				ptr[pos + 0] = rgb[cnt + 0]; // b
+				ptr[pos + 1] = rgb[cnt + 1]; // g
+				ptr[pos + 2] = rgb[cnt + 2]; // r
+				cnt += pixelSize;
+			}
+		}
+
+		//ロックを解除する
+		bmp->UnlockBits(bmpDate);
+
+		return bmp;
 	}
 }

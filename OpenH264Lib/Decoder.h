@@ -20,7 +20,6 @@ namespace OpenH264Lib {
 	private:
 		~Decoder(); // デストラクタ
 		!Decoder(); // ファイナライザ
-		byte* MergeYUV420Planes(byte* yplane, byte* uplane, byte* vplane, int width, int height, int stride);
 	public:
 		Decoder(String ^dllName);
 
@@ -30,7 +29,11 @@ namespace OpenH264Lib {
 	public:
 		///<summary>Decode h264 frame data to Bitmap.</summary>
 		///<returns>Bitmap. Might be null if frame data is incomplete.</returns>
-		byte* Decode(array<Byte> ^frame, int length);
-		byte* Decode(unsigned char *frame, int length);
+		System::Drawing::Bitmap^ Decode(array<Byte> ^frame, int length);
+		System::Drawing::Bitmap^ Decode(unsigned char *frame, int length);
+
+	private:
+		static byte* YUV420PtoRGB(byte* yplane, byte* uplane, byte* vplane, int width, int height, int stride);
+		static System::Drawing::Bitmap^ RGBtoBitmap(byte* rgb, int width, int height);
 	};
 }
