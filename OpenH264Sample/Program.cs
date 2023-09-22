@@ -33,21 +33,26 @@ namespace OpenH264Sample
             var frames = riff.Chunks.OfType<RiffChunk>().Where(x => x.FourCC == "00dc");
             var enumerator = frames.GetEnumerator();
 
+
+            int framesDecoded = 0;
             // decode frames
             while (enumerator.MoveNext())
             {
                 var chunk = enumerator.Current;
                 var frame = chunk.ReadToEnd();
 
-                var size = width * height * 3 / 2;
+                var size = width * height * 3;
                 var bytes = decoder.Decode(frame, frame.Length);
 
                 if (bytes == null) continue;
+                framesDecoded++;
                 var res = new byte[size];
 
                 for (int i = 0; i < size; i++)
                     res[i] = bytes[i];
             }
+            Console.WriteLine($"framesDecoded: {framesDecoded}");
+            Console.ReadKey();
         }
     }
 }
